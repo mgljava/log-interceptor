@@ -1,0 +1,30 @@
+feign:
+  okhttp:
+    enabled: true
+    logging:
+      level: ${OKHTTP_LOGGING_LEVEL:BODY}
+server:
+  port: 8088
+
+log:
+  urls:
+    - url: /test
+      status: 200, 500
+      request:
+        - body: true
+          requestBody: true
+          header: false
+      response:
+        - body: true
+          responseBody: true
+          header: true
+    - url: /hello
+      status: 200, 500
+      request:
+        - body: true
+          requestBody: true
+          header: false
+      response:
+        - body: true
+          responseBody: true
+          header: true
