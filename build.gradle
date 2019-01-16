@@ -24,6 +24,10 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.cloud:spring-cloud-starter-openfeign:2.0.1.RELEASE'
+    implementation "com.squareup.okhttp3:logging-interceptor:3.11.0"
+    implementation 'io.github.openfeign:feign-okhttp:9.5.1'
     compileOnly 'org.projectlombok:lombok'
+    compileOnly "org.springframework.boot:spring-boot-configuration-processor"
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
