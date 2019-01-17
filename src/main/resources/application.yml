@@ -8,23 +8,19 @@ server:
 
 log:
   urls:
-    - url: /test
+    - url: /user/get
       status: 200, 500
       request:
-        - body: true
-          requestBody: true
-          header: false
+        requestBody: true
+        header: true
       response:
-        - body: true
-          responseBody: true
-          header: true
+        responseBody: true
+        header: true
     - url: /hello
       status: 200, 500
       request:
-        - body: true
-          requestBody: true
-          header: false
+        requestBody: true
+        header: false
       response:
-        - body: true
-          responseBody: true
-          header: true
+        responseBody: true
+        header: true

@@ -1,9 +1,13 @@
 package com.github.mgljava.loginterceptor.config;
 
+import com.github.mgljava.loginterceptor.domain.LogResponse;
+import com.github.mgljava.loginterceptor.domain.Url;
 import java.io.EOFException;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.Charset;
 import java.util.Collections;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.TimeUnit;
@@ -61,113 +65,115 @@ public class HttpLoggingInterceptor implements Interceptor {
     return this.level;
   }
 
+  // 是否包含拦截的url
+  public boolean matchUrl(String url) {
+    return applicationConfiguration.getUrls().stream()
+        .anyMatch(item -> item.getUrl().equals(url));
+  }
+
+  public Optional<Url> getCurrentConfig(String path) {
+    return applicationConfiguration.getUrls().stream()
+        .filter(item -> item.getUrl().equals(path)).findFirst();
+  }
+
   public Response intercept(Chain chain) throws IOException {
-    HttpLoggingInterceptor.Level level = this.level;
     Request request = chain.request();
-    if (level == HttpLoggingInterceptor.Level.NONE) {
-      return chain.proceed(request);
-    } else {
-      boolean logBody = level == HttpLoggingInterceptor.Level.BODY;
-      boolean logHeaders = logBody || level == HttpLoggingInterceptor.Level.HEADERS;
-      RequestBody requestBody = request.body();
-      boolean hasRequestBody = requestBody != null;
-      Connection connection = chain.connection();
-      String requestStartMessage =
-          "--> " + request.method() + ' ' + request.url() + (connection != null ? " " + connection
-              .protocol() : "");
-      if (!logHeaders && hasRequestBody) {
-        requestStartMessage =
-            requestStartMessage + " (" + requestBody.contentLength() + "-byte body)";
-      }
+    final URI uri = request.url().uri();
+    String uriPath = uri.getPath();
+    if (matchUrl(uriPath)) {
+      final Optional<Url> currentConfig = getCurrentConfig(uriPath);
+      if (currentConfig.isPresent()) {
 
-      this.logger.log(requestStartMessage);
-      if (logHeaders) {
-        if (hasRequestBody) {
-          if (requestBody.contentType() != null) {
-            this.logger.log("Content-Type: " + requestBody.contentType());
+        RequestBody requestBody = request.body();
+        boolean hasRequestBody = requestBody != null;
+        Connection connection = chain.connection();
+        String requestStartMessage =
+            "--> " + request.method() + ' ' + request.url() + (connection != null ? " " + connection
+                .protocol() : "");
+        this.logger.log(requestStartMessage);
+        final Url url = currentConfig.get();
+        final boolean logRequestHeader = url.getRequest().isHeader();
+        final boolean logRequestBody = url.getRequest().isRequestBody();
+        if (logRequestHeader) {
+          Headers headers = request.headers();
+          int i = 0;
+
+          for (int count = headers.size(); i < count; ++i) {
+            String name = headers.name(i);
+            if (!"Content-Type".equalsIgnoreCase(name) && !"Content-Length"
+                .equalsIgnoreCase(name)) {
+              this.logHeader(headers, i);
+            }
           }
 
-          if (requestBody.contentLength() != -1L) {
-            this.logger.log("Content-Length: " + requestBody.contentLength());
-          }
-        }
-
-        Headers headers = request.headers();
-        int i = 0;
-
-        for (int count = headers.size(); i < count; ++i) {
-          String name = headers.name(i);
-          if (!"Content-Type".equalsIgnoreCase(name) && !"Content-Length".equalsIgnoreCase(name)) {
-            this.logHeader(headers, i);
-          }
-        }
-
-        if (logBody && hasRequestBody) {
-          if (bodyHasUnknownEncoding(request.headers())) {
-            this.logger.log("--> END " + request.method() + " (encoded body omitted)");
+          if (!logRequestBody || !hasRequestBody) {
+            logger.log("--> END " + request.method());
+          } else if (bodyHasUnknownEncoding(request.headers())) {
+            logger.log("--> END " + request.method() + " (encoded body omitted)");
           } else {
             Buffer buffer = new Buffer();
             requestBody.writeTo(buffer);
+
             Charset charset = UTF8;
             MediaType contentType = requestBody.contentType();
             if (contentType != null) {
               charset = contentType.charset(UTF8);
             }
 
-            this.logger.log("");
+            logger.log("");
             if (isPlaintext(buffer)) {
-              this.logger.log(buffer.readString(charset));
-              this.logger.log("--> END " + request.method() + " (" + requestBody.contentLength()
-                  + "-byte body)");
+              logger.log(buffer.readString(charset));
+              logger.log("--> END " + request.method()
+                  + " (" + requestBody.contentLength() + "-byte body)");
             } else {
-              this.logger.log(
-                  "--> END " + request.method() + " (binary " + requestBody.contentLength()
-                      + "-byte body omitted)");
+              logger.log("--> END " + request.method() + " (binary "
+                  + requestBody.contentLength() + "-byte body omitted)");
             }
           }
-        } else {
-          this.logger.log("--> END " + request.method());
         }
-      }
-
-      long startNs = System.nanoTime();
-
-      Response response;
-      try {
-        response = chain.proceed(request);
-      } catch (Exception var27) {
-        this.logger.log("<-- HTTP FAILED: " + var27);
-        throw var27;
-      }
-
-      long tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNs);
-      ResponseBody responseBody = response.body();
-      long contentLength = responseBody.contentLength();
-      String bodySize = contentLength != -1L ? contentLength + "-byte" : "unknown-length";
-      this.logger.log(
-          "<-- " + response.code() + (response.message().isEmpty() ? "" : ' ' + response.message())
-              + ' ' + response.request().url() + " (" + tookMs + "ms" + (!logHeaders ? ", "
-              + bodySize + " body" : "") + ')');
-      if (logHeaders) {
-        Headers headers = response.headers();
-        int i = 0;
-
-        for (int count = headers.size(); i < count; ++i) {
-          this.logHeader(headers, i);
+// -------------------- 响应  ----------------
+        long startNs = System.nanoTime();
+        Response response;
+        try {
+          response = chain.proceed(request);
+        } catch (Exception var27) {
+          this.logger.log("<-- HTTP FAILED: " + var27);
+          throw var27;
         }
+        long tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNs);
+        ResponseBody responseBody = response.body();
+        long contentLength = responseBody.contentLength();
+        String bodySize = contentLength != -1L ? contentLength + "-byte" : "unknown-length";
+        final LogResponse responseConfig = url.getResponse();
+        final boolean logResponseHeader = responseConfig.isHeader();
+        final boolean logResponseBody = responseConfig.isResponseBody();
+        this.logger.log(
+            "<-- " + response.code() + (response.message().isEmpty() ? ""
+                : ' ' + response.message())
+                + ' ' + response.request().url() + " (" + tookMs + "ms" + (!logResponseHeader ? ", "
+                + bodySize + " body" : "") + ')');
 
-        if (logBody && HttpHeaders.hasBody(response)) {
-          if (bodyHasUnknownEncoding(response.headers())) {
-            this.logger.log("<-- END HTTP (encoded body omitted)");
+        if (logResponseHeader) {
+          Headers headers = response.headers();
+          int i = 0;
+
+          for (int count = headers.size(); i < count; ++i) {
+            this.logHeader(headers, i);
+          }
+
+          if (!logResponseBody || !HttpHeaders.hasBody(response)) {
+            logger.log("<-- END HTTP");
+          } else if (bodyHasUnknownEncoding(response.headers())) {
+            logger.log("<-- END HTTP (encoded body omitted)");
           } else {
             BufferedSource source = responseBody.source();
-            source.request(9223372036854775807L);
+            source.request(Long.MAX_VALUE); // Buffer the entire body.
             Buffer buffer = source.buffer();
+
             Long gzippedLength = null;
             if ("gzip".equalsIgnoreCase(headers.get("Content-Encoding"))) {
               gzippedLength = buffer.size();
               GzipSource gzippedResponseBody = null;
-
               try {
                 gzippedResponseBody = new GzipSource(buffer.clone());
                 buffer = new Buffer();
@@ -176,7 +182,6 @@ public class HttpLoggingInterceptor implements Interceptor {
                 if (gzippedResponseBody != null) {
                   gzippedResponseBody.close();
                 }
-
               }
             }
 
@@ -187,30 +192,27 @@ public class HttpLoggingInterceptor implements Interceptor {
             }
 
             if (!isPlaintext(buffer)) {
-              this.logger.log("");
-              this.logger.log("<-- END HTTP (binary " + buffer.size() + "-byte body omitted)");
+              logger.log("");
+              logger.log("<-- END HTTP (binary " + buffer.size() + "-byte body omitted)");
               return response;
             }
 
-            if (contentLength != 0L) {
-              this.logger.log("");
-              this.logger.log(buffer.clone().readString(charset));
+            if (contentLength != 0) {
+              logger.log("");
+              logger.log(buffer.clone().readString(charset).replaceAll("\n", ""));
             }
 
             if (gzippedLength != null) {
-              this.logger.log("<-- END HTTP (" + buffer.size() + "-byte, " + gzippedLength
-                  + "-gzipped-byte body)");
+              logger.log("<-- END HTTP (" + buffer.size() + "-byte, "
+                  + gzippedLength + "-gzipped-byte body)");
             } else {
-              this.logger.log("<-- END HTTP (" + buffer.size() + "-byte body)");
+              logger.log("<-- END HTTP (" + buffer.size() + "-byte body)");
             }
           }
-        } else {
-          this.logger.log("<-- END HTTP");
         }
       }
-
-      return response;
     }
+    return chain.proceed(request);
   }
 
   private void logHeader(Headers headers, int i) {
@@ -254,13 +256,13 @@ public class HttpLoggingInterceptor implements Interceptor {
     void log(String var1);
   }
 
-  public static enum Level {
+  public enum Level {
     NONE,
     BASIC,
     HEADERS,
     BODY;
 
-    private Level() {
+    Level() {
     }
   }
 }

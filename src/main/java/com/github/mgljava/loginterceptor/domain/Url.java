@@ -1,6 +1,5 @@
 package com.github.mgljava.loginterceptor.domain;
 
-import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -19,9 +18,9 @@ public class Url {
   private String[] status;
 
   // Request
-  private List<LogRequest> request;
+  private LogRequest request;
 
   // Response
-  private List<LogResponse> response;
+  private LogResponse response;
 
 }

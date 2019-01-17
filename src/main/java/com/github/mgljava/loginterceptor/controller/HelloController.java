@@ -15,9 +15,7 @@ public class HelloController {
 
   @GetMapping("/index")
   public String index(@RequestParam("id") Integer id, @RequestHeader("auth") String auth) {
-    System.out.println("Hello World! id = " + id + ", auth = " + auth);
-    final String user = mockClient.getUser();
-    System.out.println(user);
+    mockClient.getUser();
     return "OK";
   }
 }
